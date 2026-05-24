@@ -1,0 +1,40 @@
+{
+  "name": "@yams/blog-deploy",
+  "version": "0.1.0",
+  "description": "CLI tool to manage markdown blog posts publishing to GitHub Pages",
+  "keywords": [
+    "blog",
+    "markdown",
+    "github-pages",
+    "cli"
+  ],
+  "license": "MIT",
+  "main": "bin/index.js",
+  "bin": {
+    "blog": "./bin/index.js"
+  },
+  "files": [
+    "bin/",
+    "template/"
+  ],
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx src/index.ts",
+    "start": "node bin/blog.js"
+  },
+  "dependencies": {
+    "@inquirer/prompts": "^5.0.0",
+    "chalk": "^4.1.2",
+    "commander": "^12.0.0",
+    "dayjs": "^1.11.0",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "tsx": "^4.0.0",
+    "typescript": "^5.4.0"
+  },
+  "engines": {
+    "node": ">=18"
+  }
+}

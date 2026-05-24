@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>构建一个可扩展的分布式任务调度系统 · 云栖</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topnav" data-od-id="topnav">
+    <div class="topnav-inner">
+      <a href="index.html" class="topnav-brand">云栖</a>
+      <nav class="topnav-links">
+        <a href="articles.html">文章</a>
+        <a href="about.html">关于</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-main" data-od-id="main">
+    <article data-od-id="article">
+      <div class="article-layout">
+        <div class="article-body" id="article-body">
+          <header class="article-header">
+            <h1>构建一个可扩展的分布式任务调度系统</h1>
+            <span class="article-date">2026-05-18</span>
+          </header>
+          <p>在单机时代，一个 Cron 表达式就能解决所有定时任务。但当服务规模增长到数十个微服务、数百个实例时，简单的定时触发已经无法满足需求——你需要一个分布式任务调度系统。</p>
+
+          <p>这篇文章将从零开始，探讨如何设计和实现一个生产级的分布式任务调度器。我们会覆盖任务模型、分片策略、故障转移、一致性保障等核心话题。</p>
+
+          <h2 id="问题定义">问题定义</h2>
+
+          <p>一个分布式任务调度系统需要解决的核心问题可以归纳为：</p>
+
+          <ul>
+            <li><strong>可靠触发</strong>：任务必须在预定时间被触发，不多不少恰好一次。</li>
+            <li><strong>负载均衡</strong>：多个调度节点之间需要合理分配任务，避免热点。</li>
+            <li><strong>故障转移</strong>：某个执行节点宕机后，其任务需要被其他节点接管。</li>
+            <li><strong>可观测性</strong>：每次调度的执行状态、耗时、失败原因需要被记录和查询。</li>
+          </ul>
+
+          <p>这些需求看起来简单，但在分布式环境中实现"恰好一次"的语义是极为困难的——CAP 定理决定了我们必须在一致性与可用性之间做出权衡。</p>
+
+          <h2 id="系统架构">系统架构</h2>
+
+          <p>一个典型的分布式调度系统由以下组件构成：</p>
+
+          <ul>
+            <li><strong>调度核心</strong>：负责解析任务定义、计算下次触发时间、将到期任务投递到执行队列。</li>
+            <li><strong>执行器</strong>：从队列中拉取任务并执行，将结果写回存储层。</li>
+            <li><strong>协调层</strong>：基于 Raft 或 etcd 实现选主与分片，保证同一任务不会被多个节点同时调度。</li>
+            <li><strong>存储层</strong>：持久化任务定义、调度历史和执行日志。</li>
+          </ul>
+
+          <p>调度核心采用 <strong>时间轮</strong> 算法来处理海量定时任务。相比优先队列的 O(log n) 插入复杂度，时间轮可以实现 O(1) 的添加和触发——这在百万级任务规模下至关重要。</p>
+
+          <h3>时间轮的工作原理</h3>
+
+          <p>时间轮本质是一个环形数组，每个槽位存放一个任务链表。指针按固定 tick 步进，每走一步就执行当前槽位的所有到期任务。多层时间轮可以覆盖从毫秒到小时的跨度。</p>
+
+          <pre><code>struct TimingWheel {
+    tick_ms: u64,
+    slots: Vec&lt;Vec&lt;Task&gt;&gt;,
+    current_slot: usize,
+    overflow_wheel: Option&lt;Box&lt;TimingWheel&gt;&gt;,
+}
+
+impl TimingWheel {
+    fn add(&mut self, task: Task, delay_ms: u64) {
+        let total_slots = self.slots.len() as u64;
+        let ticks = delay_ms / self.tick_ms;
+        if ticks &lt; total_slots {
+            let idx = (self.current_slot as u64 + ticks) as usize % self.slots.len();
+            self.slots[idx].push(task);
+        } else {
+            self.overflow_wheel.as_mut().unwrap().add(task, delay_ms - total_slots * self.tick_ms);
+        }
+    }
+}</code></pre>
+
+          <p>这个实现使用了嵌套时间轮来处理跨层级的时间跨度——类似时钟的时、分、秒结构。</p>
+
+          <h2 id="分片策略">分片策略</h2>
+
+          <p>当调度节点数量大于 1 时，我们需要决定哪个节点负责哪些任务。常见的分片策略有三种：</p>
+
+          <ol>
+            <li><strong>哈希分片</strong>：对任务 ID 取模，分配到固定分片。优点是简单，缺点是节点扩缩容时需要重新分配全部任务。</li>
+            <li><strong>一致性哈希</strong>：使用哈希环，扩缩容时只有相邻节点受影响。适合节点数变化频繁的场景。</li>
+            <li><strong>基于 Lease 的动态分配</strong>：每个节点定期向协调层续约，未续约的节点持有的任务会自动漂移。</li>
+          </ol>
+
+          <p>对于大多数场景，<strong>基于 Lease 的动态分配</strong>是最实用的选择。它天然支持故障转移——节点宕机后，其 Lease 会在 TTL 后过期，其他节点自动接管。不需要额外的健康检查机制。</p>
+
+          <h2 id="故障转移">故障转移</h2>
+
+          <p>故障转移的核心挑战在于区分"节点宕机"和"节点暂时无响应"。过于激进的转移会导致任务重复执行；过于保守则会导致任务长时间无人处理。</p>
+
+          <p>我们采用的策略是：</p>
+
+          <ul>
+            <li>每个执行节点每 5 秒向协调层发送心跳。</li>
+            <li>协调层维护一个 15 秒的 Lease TTL。</li>
+            <li>当 Lease 过期后，协调层将该节点的任务分片重新分配给健康的节点。</li>
+            <li>旧节点恢复后，自动放弃旧的任务分片并从协调层获取新的分配。</li>
+          </ul>
+
+          <blockquote>
+            一个常见的陷阱是使用固定超时而非心跳机制。在 GC 暂停或网络抖动时，固定的执行超时可能会导致大量的误报故障转移。
+          </blockquote>
+
+          <h2 id="一致性保障">一致性保障</h2>
+
+          <p>在分布式调度中，最棘手的问题之一就是"重复触发"。即使我们在架构层面保证了同一时刻只有一个节点持有任务的分片，也仍然会遇到边界情况：</p>
+
+          <ul>
+            <li>任务在执行过程中，节点发生了 Full GC，心跳超时。</li>
+            <li>协调层将任务转移给另一个节点，两个节点同时执行了同一个任务。</li>
+          </ul>
+
+          <p>解决这个问题需要从两个层面入手：</p>
+
+          <p><strong>调度层</strong>：在投递任务之前，通过 CAS 操作在数据库中设置一个执行锁，类似于：</p>
+
+          <pre><code>UPDATE scheduled_tasks
+SET status = 'running', executor_id = $node_id, started_at = now()
+WHERE id = $task_id
+  AND status = 'pending'
+  AND scheduled_at &lt;= now()</code></pre>
+
+          <p>只有更新成功的节点才有权执行该任务。这保证了在数据库层面的互斥。</p>
+
+          <p><strong>执行层</strong>：业务逻辑本身应该设计为幂等的。即使调度层出现 bug 导致重复投递，幂等的任务逻辑也不会产生副作用。</p>
+
+          <h2 id="可观测性">可观测性</h2>
+
+          <p>没有可观测性的调度系统是一个黑盒——你永远不知道一个任务为什么没跑。</p>
+
+          <p>我们为每次调度记录以下指标：</p>
+
+          <ul>
+            <li>任务 ID、调度时间、实际开始时间、结束时间</li>
+            <li>执行节点、执行状态（成功/失败/超时）</li>
+            <li>失败原因和堆栈信息</li>
+            <li>重试次数和每次重试的间隔</li>
+          </ul>
+
+          <p>这些数据通过 OpenTelemetry 导出到 Prometheus + Grafana，并在关键指标上设置了告警规则：调度延迟超过 30 秒、失败率超过 1%、任务堆积超过 1000 条。</p>
+
+          <h2 id="总结">总结</h2>
+
+          <p>构建一个生产级的分布式任务调度系统，需要解决的核心问题聚焦在四个方面：分片与负载均衡、故障转移、一致性保障和可观测性。</p>
+
+          <p>时间轮算法提供了 O(1) 的任务添加和触发性能；基于 Lease 的动态分片简化了故障转移；数据库 CAS 操作和业务幂等性共同保证了恰好一次的语义；OpenTelemetry + Prometheus 提供了全面的可观测性。</p>
+
+          <p>没有银弹——每个设计决策都是权衡。理解你的业务场景（任务量级、延迟容忍度、一致性要求），选择最适合的权衡方案，这比照搬某个论文的实现要重要得多。</p>
+        </div>
+
+        <aside class="article-toc" id="article-toc">
+          <p class="article-toc-title">目录</p>
+        </aside>
+      </div>
+    </article>
+  </main>
+
+  <div class="toc-overlay" id="toc-overlay"></div>
+  <button class="toc-toggle" id="toc-toggle" aria-label="目录">
+    <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+      <line x1="8" y1="6" x2="21" y2="6"/>
+      <line x1="8" y1="12" x2="21" y2="12"/>
+      <line x1="8" y1="18" x2="21" y2="18"/>
+      <circle cx="4.5" cy="6" r="1.3" fill="currentColor" stroke="none"/>
+      <circle cx="4.5" cy="12" r="1.3" fill="currentColor" stroke="none"/>
+      <circle cx="4.5" cy="18" r="1.3" fill="currentColor" stroke="none"/>
+    </svg>
+  </button>
+
+  <footer class="pagefoot" data-od-id="footer">
+    <div class="container">© 2026 云栖</div>
+  </footer>
+
+  <script>
+    (function() {
+      var body = document.getElementById('article-body');
+      var toc = document.getElementById('article-toc');
+      var headings = body.querySelectorAll('h2, h3');
+      var links = [];
+
+      headings.forEach(function(h, i) {
+        if (!h.id) h.id = 'section-' + i;
+        var a = document.createElement('a');
+        a.href = '#' + h.id;
+        a.textContent = h.textContent;
+        if (h.tagName === 'H3') a.className = 'toc-h3';
+        toc.appendChild(a);
+        links.push(a);
+      });
+
+      var observer = new IntersectionObserver(function(entries) {
+        entries.forEach(function(e) {
+          if (!e.isIntersecting) return;
+          links.forEach(function(a) { a.classList.remove('toc-active'); });
+          var target = links.find(function(a) { return a.getAttribute('href') === '#' + e.target.id; });
+          if (target) target.classList.add('toc-active');
+        });
+      }, { rootMargin: '-80px 0px -60% 0px' });
+
+      headings.forEach(function(h) { observer.observe(h); });
+
+      /* TOC drawer toggle */
+      var toggle = document.getElementById('toc-toggle');
+      var overlay = document.getElementById('toc-overlay');
+
+      function openToc() { toc.classList.add('open'); overlay.classList.add('open'); }
+      function closeToc() { toc.classList.remove('open'); overlay.classList.remove('open'); }
+
+      toggle.addEventListener('click', function() {
+        toc.classList.contains('open') ? closeToc() : openToc();
+      });
+
+      overlay.addEventListener('click', closeToc);
+
+      toc.addEventListener('click', function(e) {
+        if (e.target.tagName === 'A') closeToc();
+      });
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape' && toc.classList.contains('open')) closeToc();
+      });
+    })();
+  </script>
+</body>
+</html>

@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>home · 云栖</title>
+  <link rel="stylesheet" href="css/style.css" />
+</head>
+<body>
+  <header class="topnav" data-od-id="topnav">
+    <div class="topnav-inner">
+      <a href="index.html" class="topnav-brand">云栖</a>
+      <nav class="topnav-links">
+        <a href="articles.html">文章</a>
+        <a href="about.html">关于</a>
+      </nav>
+    </div>
+  </header>
+
+  <main class="page-main" data-od-id="main">
+    <section class="home-hero" data-od-id="hero">
+      <div class="container-narrow">
+        <h1>思考、构建、记录。</h1>
+        <p class="bio">一位软件工程师的博客。记录技术探索、系统设计与工程实践中的思考。</p>
+        <div class="home-links">
+          <a href="articles.html" class="btn btn-primary">阅读文章</a>
+          <a href="about.html" class="btn btn-secondary">了解更多</a>
+        </div>
+      </div>
+    </section>
+
+    <section class="container-narrow" style="padding-bottom: var(--space-16);" data-od-id="recent-articles">
+      <h2 class="section-heading">最近文章</h2>
+
+      <div class="article-list" style="margin-top: var(--space-8);">
+        <article class="log-row">
+          <span class="log-date">2026-05-18</span>
+          <div>
+            <a href="article.html" class="log-title-link"><h3 class="log-title">构建一个可扩展的分布式任务调度系统</h3></a>
+            <p class="log-excerpt">从单机 Cron 到分布式调度器：探讨任务分片、故障转移与一致性保障的核心设计。</p>
+          </div>
+        </article>
+        <article class="log-row">
+          <span class="log-date">2026-05-10</span>
+          <div>
+            <a href="article.html" class="log-title-link"><h3 class="log-title">Rust 异步运行时：从 Future 到 Waker</h3></a>
+            <p class="log-excerpt">深入理解 Rust 异步编程模型的核心机制，手动构建一个最小化的 Tokio-like 运行时。</p>
+          </div>
+        </article>
+        <article class="log-row">
+          <span class="log-date">2026-04-28</span>
+          <div>
+            <a href="article.html" class="log-title-link"><h3 class="log-title">数据库索引的内部世界：B+Tree 与 LSM</h3></a>
+            <p class="log-excerpt">对比两种主流存储引擎索引结构的设计权衡，从写入放大、读取路径到压缩策略。</p>
+          </div>
+        </article>
+        <article class="log-row">
+          <span class="log-date">2026-04-15</span>
+          <div>
+            <a href="article.html" class="log-title-link"><h3 class="log-title">设计一个安全的 URL Shortener：从短码到系统架构</h3></a>
+            <p class="log-excerpt">不只是 base62 编码——论分布式 ID 生成、速率限制与恶意链接检测。</p>
+          </div>
+        </article>
+      </div>
+
+      <div style="text-align: center; margin-top: var(--space-10);">
+        <a href="articles.html" class="btn btn-secondary">查看全部文章 →</a>
+      </div>
+    </section>
+  </main>
+
+  <footer class="pagefoot" data-od-id="footer">
+    <div class="container">© 2026 云栖</div>
+  </footer>
+</body>
+</html>
