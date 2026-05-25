@@ -130,19 +130,36 @@ function syncTemplateFiles(deployPath: string): void {
     }
   }
 
-  // HTML / CSS templates
+  // HTML / CSS templates → deployPath/template/
   const srcTplDir = path.join(templateRoot, 'template');
+  const destTplDir = path.join(deployPath, 'template');
   if (fs.existsSync(srcTplDir)) {
     for (const entry of fs.readdirSync(srcTplDir, { withFileTypes: true })) {
       const srcPath = path.join(srcTplDir, entry.name);
-      const destPath = path.join(deployPath, entry.name);
+      const destPath = path.join(destTplDir, entry.name);
       if (entry.isDirectory()) {
         copyDir(srcPath, destPath);
       } else {
         fs.copyFileSync(srcPath, destPath);
       }
-      console.log(chalk.dim(`  ✓ ${entry.name}`));
+      console.log(chalk.dim(`  ✓ template/${entry.name}`));
     }
+  }
+
+  // Remove stale root-level template files from older sync bug
+  const rootTemplateFiles = ['about.html', 'articles.html', 'index.html', 'post.html'];
+  for (const file of rootTemplateFiles) {
+    const stalePath = path.join(deployPath, file);
+    if (fs.existsSync(stalePath)) {
+      fs.unlinkSync(stalePath);
+      console.log(chalk.dim(`  ✗ ${file} (removed stale copy)`));
+    }
+  }
+  // Also remove stale css/ at root if it exists alongside template/css/
+  const staleCss = path.join(deployPath, 'css');
+  if (fs.existsSync(staleCss) && fs.existsSync(path.join(destTplDir, 'css'))) {
+    fs.rmSync(staleCss, { recursive: true, force: true });
+    console.log(chalk.dim('  ✗ css/ (removed stale copy)'));
   }
 
   // GitHub Actions workflow
