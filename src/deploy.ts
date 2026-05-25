@@ -118,16 +118,19 @@ function copyDir(src: string, dest: string): void {
  *
  * 自动同步的文件（基础设施/结构性模板）：
  *   - build.js, package.json, .github/workflows/
- *   - template/post.html, index.html, articles.html (用 {{{占位符}}} 的结构模板)
+ *   - template/post.html, index.html, articles.html
  *   - template/css/style.css
  *
- * 不同步的文件（用户内容，含个人信息）：
- *   - template/about.html  ← 只在 blog init 时复制一次
+ * 不同步的文件（用户自定义内容，只在 blog init 时复制一次）：
+ *   - site.json        ← 站点配置（作者名、GitHub、邮箱）
+ *   - about.md         ← 关于页内容（Markdown 自由书写）
+ *   - template/about.html ← 关于页模板（已改为由 about.md 渲染）
  */
 function syncTemplateFiles(deployPath: string): void {
   const templateRoot = path.resolve(__dirname, '..', 'template');
 
-  // ── Root-level files ──
+  // ── Root-level files (skip user content) ──
+  const rootSkip = new Set(['site.json', 'about.md']);
   const rootFiles = ['build.js', 'package.json'];
   for (const file of rootFiles) {
     const src = path.join(templateRoot, file);
@@ -136,6 +139,10 @@ function syncTemplateFiles(deployPath: string): void {
       fs.copyFileSync(src, dest);
       console.log(chalk.dim(`  ✓ ${file}`));
     }
+  }
+  // Skip user content files at root
+  for (const file of rootSkip) {
+    console.log(chalk.dim(`  - ${file} (skipped, user content)`));
   }
 
   // ── HTML / CSS templates → deployPath/template/ ──
