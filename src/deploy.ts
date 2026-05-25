@@ -97,6 +97,66 @@ function makeCommitMessage(entries: ArticleEntry[], action: string): string {
 }
 
 /**
+ * 复制目录（递归）
+ */
+function copyDir(src: string, dest: string): void {
+  if (!fs.existsSync(src)) return;
+  if (!fs.existsSync(dest)) fs.mkdirSync(dest, { recursive: true });
+  for (const entry of fs.readdirSync(src, { withFileTypes: true })) {
+    const srcPath = path.join(src, entry.name);
+    const destPath = path.join(dest, entry.name);
+    if (entry.isDirectory()) {
+      copyDir(srcPath, destPath);
+    } else {
+      fs.copyFileSync(srcPath, destPath);
+    }
+  }
+}
+
+/**
+ * 同步模板文件到部署仓库（build.js, HTML, CSS, CI workflow）
+ */
+function syncTemplateFiles(deployPath: string): void {
+  const templateRoot = path.resolve(__dirname, '..', 'template');
+
+  // Root-level files
+  const rootFiles = ['build.js', 'package.json'];
+  for (const file of rootFiles) {
+    const src = path.join(templateRoot, file);
+    const dest = path.join(deployPath, file);
+    if (fs.existsSync(src)) {
+      fs.copyFileSync(src, dest);
+      console.log(chalk.dim(`  ✓ ${file}`));
+    }
+  }
+
+  // HTML / CSS templates
+  const srcTplDir = path.join(templateRoot, 'template');
+  if (fs.existsSync(srcTplDir)) {
+    for (const entry of fs.readdirSync(srcTplDir, { withFileTypes: true })) {
+      const srcPath = path.join(srcTplDir, entry.name);
+      const destPath = path.join(deployPath, entry.name);
+      if (entry.isDirectory()) {
+        copyDir(srcPath, destPath);
+      } else {
+        fs.copyFileSync(srcPath, destPath);
+      }
+      console.log(chalk.dim(`  ✓ ${entry.name}`));
+    }
+  }
+
+  // GitHub Actions workflow
+  const wfSrc = path.join(templateRoot, '.github', 'workflows', 'deploy.yml');
+  const wfDest = path.join(deployPath, '.github', 'workflows', 'deploy.yml');
+  if (fs.existsSync(wfSrc)) {
+    const destDir = path.dirname(wfDest);
+    if (!fs.existsSync(destDir)) fs.mkdirSync(destDir, { recursive: true });
+    fs.copyFileSync(wfSrc, wfDest);
+    console.log(chalk.dim('  ✓ .github/workflows/deploy.yml'));
+  }
+}
+
+/**
  * 发布文章：复制到部署仓库并推送
  */
 export function deployArticles(config: BlogConfig, entries: ArticleEntry[]): void {
@@ -113,6 +173,10 @@ export function deployArticles(config: BlogConfig, entries: ArticleEntry[]): voi
 
   console.log(chalk.blue('正在拉取最新代码...'));
   pullLatest(config.deployPath);
+
+  // Sync template files first
+  console.log(chalk.blue('正在同步模板文件...'));
+  syncTemplateFiles(config.deployPath);
 
   console.log(chalk.blue(`正在复制 ${entries.length} 篇文章到部署仓库...`));
   for (const entry of entries) {
@@ -145,6 +209,10 @@ export function undeployArticles(config: BlogConfig, entries: ArticleEntry[]): v
 
   console.log(chalk.blue('正在拉取最新代码...'));
   pullLatest(config.deployPath);
+
+  // Sync template files first
+  console.log(chalk.blue('正在同步模板文件...'));
+  syncTemplateFiles(config.deployPath);
 
   const names = entries.map((e) => e.fileName);
   console.log(chalk.blue(`正在从部署仓库删除 ${entries.length} 篇文章...`));
