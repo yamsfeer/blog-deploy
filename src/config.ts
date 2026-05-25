@@ -30,3 +30,50 @@ export function getConfigOrExit(sourceDir?: string): BlogConfig {
   }
   return config;
 }
+
+// ─── 新的灵活配置解析 ────────────────────────────────────────────────
+
+export interface ResolvedConfig {
+  /** 源目录（始终有值，默认为 process.cwd()） */
+  sourceDir: string;
+  /** 部署仓库路径（可能为 null，需调用方按需校验） */
+  deployPath: string | null;
+}
+
+/**
+ * 解析配置：CLI 参数优先，其次 .blogrc，最后默认值。
+ * deployPath 可能为 null（用户未通过任何方式指定）。
+ */
+export function resolveConfig(cliOpts: {
+  source?: string;
+  deploy?: string;
+}): ResolvedConfig {
+  const sourceDir = cliOpts.source
+    ? path.resolve(cliOpts.source)
+    : process.cwd();
+
+  let deployPath: string | null = null;
+  if (cliOpts.deploy) {
+    deployPath = path.resolve(cliOpts.deploy);
+  } else {
+    const config = loadConfig();
+    if (config?.deployPath) deployPath = config.deployPath;
+  }
+
+  return { sourceDir, deployPath };
+}
+
+/**
+ * 确保 deployPath 非空，否则打印错误并退出。
+ * 用于 publish / unpublish 等必须指定部署仓库的命令。
+ */
+export function requireDeployPath(deployPath: string | null): string {
+  if (!deployPath) {
+    console.error('错误：未指定部署仓库路径。');
+    console.error('可以通过以下方式指定：');
+    console.error('  1. blog init --deploy <path>     创建 .blogrc 配置文件');
+    console.error('  2. --deploy <path>               在命令行直接指定');
+    process.exit(1);
+  }
+  return deployPath;
+}

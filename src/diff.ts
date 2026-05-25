@@ -38,8 +38,9 @@ export function isModified(sourcePath: string, deployPath: string, fileName: str
 export function markModifiedEntries(
   entries: ArticleEntry[],
   sourceDir: string,
-  deployPath: string,
+  deployPath?: string | null,
 ): void {
+  if (!deployPath) return; // 无 deploy 路径时跳过修改检测
   for (const entry of entries) {
     if (entry.effectiveStatus === 'published') {
       const sourcePath = path.join(sourceDir, entry.relativePath);
