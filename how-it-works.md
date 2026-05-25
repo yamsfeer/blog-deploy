@@ -20,7 +20,13 @@
 
 ### 阶段 3：选择文章
 
-`selector.ts` 提供交互式多选界面（基于 `@inquirer/prompts`），用树形目录结构展示可发布的文章（draft + 已修改的 published 文章），空格选中、回车确认。
+`selector.ts` 通过 `file-tree.ts` 提供交互式文件树选择器，用真实的文件系统树结构展示可发布的文章（draft + 已修改的 published 文章）：
+
+- 文件夹支持折叠/展开（←→ 方向键）
+- 文件夹有三态 checkbox：☐ 空 / ◐ 部分 / ☑ 全选
+- Space 在文件夹上切换全选/全不选，在文件上切换单个选择
+- Enter 确认，q 退出
+- 支持 viewport 滚动，处理大量文件时不超出终端
 
 ### 阶段 4：更新 frontmatter
 
@@ -39,8 +45,9 @@ updated_at: "2026-05-25"   # 最后更新时间
 1. 验证部署路径存在且是 Git 仓库
 2. 检查工作区是否干净（无未提交变更）
 3. `git pull origin main` 拉取最新代码
-4. **复制文件**到 `<deployPath>/posts/` — 扁平化存储，不保留原始目录结构
-5. `git add` → `git commit` → `git push origin main`
+4. **同步模板** — 将 CLI 内置的最新 `build.js`、HTML 模板、CSS、CI workflow 复制到部署仓库
+5. **复制文件**到 `<deployPath>/posts/` — 扁平化存储，不保留原始目录结构
+6. `git add` → `git commit` → `git push origin main`
 
 ### 阶段 6：GitHub Actions 自动构建
 
@@ -60,7 +67,7 @@ updated_at: "2026-05-25"   # 最后更新时间
 
 ## Template 文件夹的作用
 
-`template/` 目录完全是**部署仓库的初始模板**。它的存在是为了让用户可以快速创建一个"空"的博客部署仓库，所有文件会被复制到用户的部署仓库目录。
+`template/` 目录是**部署仓库的初始模板**，供 `blog init` 创建新仓库时复制。同时，每次 `blog publish` / `blog unpublish` 时会自动将最新的 `build.js`、HTML 模板、CSS 和 CI workflow 同步到部署仓库，确保构建基础设施始终保持最新。
 
 | 文件/目录 | 作用 |
 |----------|------|
@@ -74,7 +81,7 @@ updated_at: "2026-05-25"   # 最后更新时间
 | `template/template/css/style.css` | 完整的 CSS 设计系统（暖色羊皮纸配色，630 行） |
 | `template/.github/workflows/deploy.yml` | GitHub Actions 部署流水线 |
 
-**关键设计点**：Template 属于部署仓库，不属于 CLI。这意味着你可以修改模板样式、调整 HTML 结构，而不需要升级 CLI 版本 —— 两者完全解耦。
+**关键设计点**：Template 文件在每次发布时自动同步，你修改 CLI 仓库的模板后下次发布即可生效。如需自定义模板样式，建议在部署仓库中创建备份后再修改。
 
 ---
 
@@ -141,5 +148,5 @@ note ──→ draft ──→ published ──→ [编辑后标记为已修改]
 | **frontmatter** | `src/frontmatter.ts` | YAML frontmatter 解析/序列化/更新 |
 | **deploy** | `src/deploy.ts` | 部署仓库 Git 操作（验证、pull、复制、commit、push） |
 | **diff** | `src/diff.ts` | 正文 SHA256 哈希对比 |
+| **selector** | `src/selector.ts` + `src/file-tree.ts` | 交互式文件树选择器（支持文件夹展开/折叠、三态 checkbox） |
 | **renderer** | `src/renderer.ts` | 终端彩色表格输出 |
-| **selector** | `src/selector.ts` | 交互式 checkbox 多选界面 |

@@ -161,7 +161,7 @@ blog list --idea         # 只看想法
 ```bash
 blog draft <文件路径>        # 标记一篇为草稿
 blog draft <文件路径>...     # 标记多篇
-blog draft --interactive     # 交互式选择标记
+blog draft                   # 交互式选择标记
 ```
 
 行为：
@@ -172,7 +172,8 @@ blog draft --interactive     # 交互式选择标记
 ### 标记想法
 
 ```bash
-blog idea <文件路径>
+blog idea <文件路径>          # 直接指定文件
+blog idea                     # 交互式选择标记
 ```
 
 行为：添加/修改 `status: idea`，明确排除出发布流程。
@@ -186,24 +187,29 @@ blog publish --last             # 快速发布最近修改过的那篇 draft
 blog publish <文件路径>...      # 直接指定文件
 ```
 
-**交互式多选界面**（保持目录树结构）：
+**交互式文件树选择器**（支持文件夹展开/折叠）：
 
 ```
 $ blog publish
 
-? 选择要发布的文章 (空格选中/取消，方向键移动，回车确认):
+? 选择要发布的文章
 
- └─ 📁 tech/
- │  ├─ ☐ Docker 入门指南.md              [草稿]
- │  ├─ ☐ Go 协程调度原理.md               [草稿]
- │  └─ ☐ PostgreSQL 索引优化.md           [已修改]
- └─ 📁 life/
- │  └─ ☐ 北海道游记.md                    [草稿]
- └─ 📁 ideas/
-    └─ ☐ 碎碎念.md                        [想法] ← 灰色，不可选
+  tech/
+  ☐ Docker 入门指南                      draft
+  ☐ Go 协程调度原理                       draft
+  ☐ PostgreSQL 索引优化                   modified
+  life/
+  ☐ 北海道游记                            draft
+  ideas/
+  ☐ 碎碎念                                idea (unavailable)
 
-已选: 0 篇
+  0 selected · space toggle · ←→ collapse/expand · ↑↓ move · enter confirm · q quit
 ```
+
+- `↑↓` / `jk` 移动光标，`→` 展开文件夹，`←` 折叠
+- `Space` 在文件夹：全选/取消全选；在文件：切换选中
+- 文件夹左侧三态 checkbox：`☐` 空 / `◐` 部分 / `☑` 全选
+- 底部栏显示实时选中数量和快捷键提示
 
 **执行流程**（见第五节详情）。
 
@@ -214,15 +220,7 @@ blog unpublish                  # 交互式多选（只列出已发布的）
 blog unpublish <文件路径>...
 ```
 
-交互式界面：
-```
-$ blog unpublish
-
-? 选择要下架的文章:
-
- └─ ☐ Docker 入门指南.md                 2024-03-15 发布
- └─ ☐ Go 协程调度原理.md                 2024-02-01 发布
-```
+下架文章同样使用交互式文件树，只列出已发布的文章。
 
 ---
 
@@ -253,7 +251,8 @@ blog publish (用户选中文件: tech/docker.md, life/travel.md)
   │   └─ 干净 → 继续
   └─ git pull origin main  ← 拉取最新
 
-步骤 3：复制文件到部署仓库
+步骤 3：同步模板并复制文件到部署仓库
+  ├─ 同步最新模板文件（build.js, HTML, CSS, CI workflow）到部署仓库
   ├─ 对每个选中的文件：
   │   ├─ 源文件路径: ~/my-notes/tech/docker.md
   │   ├─ 目标路径:   <deployPath>/posts/docker.md
@@ -375,7 +374,7 @@ blog-deploy-repo/
         └── deploy.yml            # GitHub Actions 部署配置
 ```
 
-**注意**：`template/` 和 `.github/` 目录是部署仓库自带的，blog CLI **不会**修改它们。CLI 只操作 `posts/` 目录。
+**注意**：`blog publish` / `blog unpublish` 执行时会自动将 CLI 内置的最新 `build.js`、HTML 模板、CSS 和 CI workflow 同步到部署仓库，确保构建基础设施始终保持最新。如果你自定义了模板样式，建议在部署仓库中创建备份后再同步。
 
 ### build.js 构建逻辑
 
@@ -435,14 +434,9 @@ jobs:
       - uses: actions/deploy-pages@v4
 ```
 
-### 为什么部署仓库有 template/ 而 CLI 只管 posts/
+### 为什么部署仓库有 template/ 而 CLI 同步模板
 
-这是刻意分离的关注点：
-
-- **CLI**：只管"哪些文章要发"，只搬运 .md 文件
-- **部署仓库**：管"文章怎么展示"，控制模板、样式、构建逻辑
-
-这样你可以独立更新博客样式，而不需要更新 CLI 工具。反之亦然。
+每次发布时 CLI 自动将最新的模板文件同步到部署仓库，确保 `build.js`、样式和构建流程始终保持一致。如需自定义模板样式，建议在部署仓库中创建备份，因为下次发布时会被覆盖为 CLI 内置版本。
 
 ---
 
@@ -476,18 +470,30 @@ jobs:
 
 ## 九、交互界面技术选型
 
-使用 `prompts` 库实现交互式多选：
+使用 Node.js 原生 `readline`（raw mode）实现自定义交互式文件树选择器 (`src/file-tree.ts`)：
 
 ```
-npm install prompts
+终端 TTY 输入 (raw mode)
+    │
+    ▼
+键盘事件解析 (↑↓←→ Space Enter q)
+    │
+    ▼
+树状态更新 (expand/collapse, select/deselect)
+    │
+    ▼
+ANSI 全量重绘 (光标上移 N 行 + 擦除 + 重绘)
+    │
+    ▼
+viewport 滚动 + 自动定位光标
 ```
 
 特性：
-- 支持多选 (multiselect)
-- 支持单选
-- 支持分组/树形展示
-- 支持搜索/过滤
-- 方向键导航、空格选中、回车确认
+- 真正的文件夹嵌套结构，支持展开/折叠（←→ 方向键）
+- 三态文件夹 checkbox（空/部分/全选）
+- fzf 风格光标高亮（`>` 前缀标记）
+- viewport 滚动处理大量文件，不超出终端
+- 键盘导航：↑↓/jk 移动，Space 切换，Enter 确认，q 退出
 
 ---
 
@@ -566,10 +572,11 @@ blog-deploy/                          ← npm 包项目
 │   ├── config.ts                     # .blogrc 读取与写入
 │   ├── scanner.ts                    # 扫描源目录，枚举 .md 文件
 │   ├── frontmatter.ts               # frontmatter 解析、更新、写入
-│   ├── deploy.ts                     # 部署仓库操作：复制文件、git 操作
+│   ├── deploy.ts                     # 部署仓库操作：复制文件、git 操作、模板同步
 │   ├── diff.ts                       # 文件内容对比（hash）
 │   ├── renderer.ts                   # 终端输出格式化
-│   ├── selector.ts                   # 交互式多选界面（基于 prompts）
+│   ├── selector.ts                   # 交互式多选入口（调用 file-tree）
+│   ├── file-tree.ts                  # 自定义文件树选择器（readline raw mode）
 │   └── commands/
 │       ├── init.ts                   # blog init
 │       ├── list.ts                   # blog list
