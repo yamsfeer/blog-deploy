@@ -114,12 +114,20 @@ function copyDir(src: string, dest: string): void {
 }
 
 /**
- * 同步模板文件到部署仓库（build.js, HTML, CSS, CI workflow）
+ * 同步模板文件到部署仓库
+ *
+ * 自动同步的文件（基础设施/结构性模板）：
+ *   - build.js, package.json, .github/workflows/
+ *   - template/post.html, index.html, articles.html (用 {{{占位符}}} 的结构模板)
+ *   - template/css/style.css
+ *
+ * 不同步的文件（用户内容，含个人信息）：
+ *   - template/about.html  ← 只在 blog init 时复制一次
  */
 function syncTemplateFiles(deployPath: string): void {
   const templateRoot = path.resolve(__dirname, '..', 'template');
 
-  // Root-level files
+  // ── Root-level files ──
   const rootFiles = ['build.js', 'package.json'];
   for (const file of rootFiles) {
     const src = path.join(templateRoot, file);
@@ -130,11 +138,20 @@ function syncTemplateFiles(deployPath: string): void {
     }
   }
 
-  // HTML / CSS templates → deployPath/template/
+  // ── HTML / CSS templates → deployPath/template/ ──
   const srcTplDir = path.join(templateRoot, 'template');
   const destTplDir = path.join(deployPath, 'template');
+
+  // Content pages that the user customizes — skip during sync
+  const contentPages = new Set(['about.html']);
+
   if (fs.existsSync(srcTplDir)) {
     for (const entry of fs.readdirSync(srcTplDir, { withFileTypes: true })) {
+      // Skip user content pages
+      if (contentPages.has(entry.name)) {
+        console.log(chalk.dim(`  - template/${entry.name} (skipped, user content)`));
+        continue;
+      }
       const srcPath = path.join(srcTplDir, entry.name);
       const destPath = path.join(destTplDir, entry.name);
       if (entry.isDirectory()) {
